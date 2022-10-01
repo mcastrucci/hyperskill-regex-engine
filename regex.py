@@ -1,4 +1,4 @@
-META_CHARS = ['?', '*', '+', '$', '^']
+META_CHARS = ['?', '*', '+', '$', '^', '\\']
 
 def main():
     regex, string_to_test = get_user_inputs()
@@ -17,7 +17,7 @@ def print_result(result):
     print(result)
 
 
-def test_char(char, string_to_test, index, wildcard=False) -> tuple[int, bool]:
+def test_char(char, string_to_test, index, wildcard=False, skipped=False) -> tuple[int, bool]:
     """ tests if the char matches the given string from the given index and returns the
     index where it does not match anymore
 
@@ -25,16 +25,16 @@ def test_char(char, string_to_test, index, wildcard=False) -> tuple[int, bool]:
         the index where the String does not match the char
     """
 
-    if wildcard and wildcard != '$':
+    if wildcard and wildcard != '$' and wildcard != '\\':
         # char is optional or one time
         if wildcard == '?':
-            if char == string_to_test[index] or char == '.':
+            if char == string_to_test[index] or (char == '.' and not skipped):
                 return (index + 1), True
             else:
                 return index, True
         # matches zero or more times
         elif wildcard == '*':
-            if char == string_to_test[index] or char == '.':
+            if char == string_to_test[index] or (char == '.' and not skipped):
                 # count the next chars if there is more
                 next_index = consume_char_n_times(char, string_to_test, index)
                 return next_index, True
@@ -42,7 +42,7 @@ def test_char(char, string_to_test, index, wildcard=False) -> tuple[int, bool]:
                 return index, True
         # matches at least one time and n times
         elif wildcard == '+':
-            if char == string_to_test[index] or char == '.':
+            if char == string_to_test[index] or (char == '.' and not skipped):
                 next_index = consume_char_n_times(char, string_to_test, index)
                 return next_index, True
             else:
@@ -52,13 +52,13 @@ def test_char(char, string_to_test, index, wildcard=False) -> tuple[int, bool]:
             return index, True
     else:
         # if no wildcard, the char should match the string at the index
-        if char == string_to_test[index] or char == '.':
+        if char == string_to_test[index] or (char == '.' and not skipped):
             return (index + 1), True
         else:
             return index, False
 
 
-def consume_char_n_times(char, string_to_consume, pointer=0, stop_at=None):
+def consume_char_n_times(char, string_to_consume, pointer=0, skipped=False, stop_at=None):
     """Consumes a char n times in a string from an pointer
 
     Returns
@@ -67,7 +67,7 @@ def consume_char_n_times(char, string_to_consume, pointer=0, stop_at=None):
     # count the next chars if there is more
     next_index = pointer
     next_string_char = char
-    while next_string_char == char or char == '.' and next_string_char != stop_at:
+    while next_string_char == char or (char == '.' and not skipped) and next_string_char != stop_at:
         try:
             temp_index = next_index + 1
             temp = string_to_consume[temp_index]
@@ -98,8 +98,18 @@ def test_string_with_regex(regex, string_to_test):
     # Iterate over regex and check string match
     valid = True
     for i in range(len(regex)):
+        # check if the previous character is a scape char
+        skipped = False
+        if i > 0:
+            try:
+                previous_regex_char = regex[i - 1]
+            except IndexError:
+                pass  # previous char not avialable
+            else:
+                if previous_regex_char == '\\':
+                    skipped = True
         # check if current index in regex is a meta-char
-        if regex[i] in META_CHARS:
+        if regex[i] in META_CHARS and not skipped:
 
             # if the regex char is ^ it will be valid in two situations
             # 1. The string pointer is still at 0
@@ -135,7 +145,7 @@ def test_string_with_regex(regex, string_to_test):
                         # invalid case, not end of line # keep slicing the string
                         valid = test_string_with_regex(regex, string_to_test[1:])
                         break
-            elif regex[i] == '?' or regex[i] == '*' or regex[i] == '+':
+            elif regex[i] == '?' or regex[i] == '*' or regex[i] == '+' or regex[i] == '\\':
                 # if any of the wildcards is the next regex char, skip it
                 continue
         else:
@@ -155,7 +165,7 @@ def test_string_with_regex(regex, string_to_test):
 
             char = string_to_test[string_pointer]
 
-            if valid and regex_char == '.' and (wildcard == '+') or (wildcard == '*'):
+            if valid and (regex_char == '.' and not skipped) and (wildcard == '+') or (wildcard == '*'):
                 # consume everything until next non-metacharacter
                 try:
                     temp = regex[i + 2]
@@ -176,14 +186,14 @@ def test_string_with_regex(regex, string_to_test):
                     valid = False
                     break
             elif match_at_start and valid:
-                index, valid = test_char(regex_char, string_to_test, string_pointer, wildcard)
+                index, valid = test_char(regex_char, string_to_test, string_pointer, wildcard, skipped)
                 string_pointer = index
                 if not valid:
                     # since the match should happen at the start, if there is no match
                     # the regex test fails
                     return False
             else:
-                index, valid = test_char(regex_char, string_to_test, string_pointer, wildcard)
+                index, valid = test_char(regex_char, string_to_test, string_pointer, wildcard, skipped)
                 string_pointer = index
                 # if not valid, make a slice of the string and re-try
                 if not valid:
